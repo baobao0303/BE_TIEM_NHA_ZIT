@@ -47,6 +47,6 @@ const TaskSchema: Schema = new Schema({
 });
 
 TaskSchema.index({ status: 1 });
-TaskSchema.index({ slug: 1 });
+
 
 export default mongoose.model<ITask>('Task', TaskSchema);
