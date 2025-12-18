@@ -1,5 +1,11 @@
-import { Router } from 'express';
-import authController from '@/controllers/portals/auths/authController';
+import { Router } from "express";
+import authController from "@/controllers/portals/auths/authController";
+import {
+  validate,
+  adminLoginSchema,
+  adminRegisterSchema,
+  adminRefreshTokenSchema,
+} from "@/utils/validate/portal/auth.validate";
 
 const router = Router();
 
@@ -54,7 +60,7 @@ const router = Router();
  *       500:
  *         description: Internal server error
  */
-router.post('/admin/sign-in', authController.login);
+router.post("/admin/sign-in", validate(adminLoginSchema), authController.login);
 
 /**
  * @swagger
@@ -91,7 +97,7 @@ router.post('/admin/sign-in', authController.login);
  *       500:
  *         description: Internal server error
  */
-router.post('/admin/register', authController.register);
+router.post("/admin/register", validate(adminRegisterSchema), authController.register);
 
 /**
  * @swagger
@@ -105,7 +111,7 @@ router.post('/admin/register', authController.register);
  *       500:
  *         description: Internal server error
  */
-router.post('/admin/logout', authController.logout);
+router.post("/admin/logout", authController.logout);
 
 /**
  * @swagger
@@ -130,6 +136,6 @@ router.post('/admin/logout', authController.logout);
  *       403:
  *         description: Invalid or expired refresh token
  */
-router.post('/admin/refresh-token', authController.refreshToken);
+router.post("/admin/refresh-token", validate(adminRefreshTokenSchema), authController.refreshToken);
 
 export default router;

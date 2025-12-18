@@ -1,7 +1,12 @@
-import { Router } from 'express';
-import roleController from '@/controllers/portals/roles/roleController';
-import { protect } from '@/middlewares/portals/auth.middleware';
-import { validateId } from '@/middlewares/portals/validate.middleware';
+import { Router } from "express";
+import roleController from "@/controllers/portals/roles/roleController";
+import { protect } from "@/middlewares/portals/auth.middleware";
+import { validateId } from "@/middlewares/portals/validate.middleware";
+import {
+  validate,
+  roleCreateSchema,
+  roleUpdateSchema,
+} from "@/utils/validate/portal/role.validate";
 
 const router = Router();
 
@@ -52,9 +57,10 @@ router.use(protect); // Protect all role routes
  *       201:
  *         description: Role created
  */
-router.route('/')
-    .get(roleController.getAll)
-    .post(roleController.create);
+router
+  .route("/")
+  .get(roleController.getAll)
+  .post(validate(roleCreateSchema), roleController.create);
 
 /**
  * @swagger
@@ -109,9 +115,10 @@ router.route('/')
  *       200:
  *         description: Role deleted
  */
-router.route('/:id')
-    .get(validateId, roleController.getOne)
-    .put(validateId, roleController.update)
-    .delete(validateId, roleController.delete);
+router
+  .route("/:id")
+  .get(validateId, roleController.getOne)
+  .put(validateId, validate(roleUpdateSchema), roleController.update)
+  .delete(validateId, roleController.delete);
 
 export default router;

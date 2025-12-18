@@ -6,6 +6,7 @@ export interface IEmployee extends Document {
     password: string;
     image?: string;
     role: string;
+    googleId?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -15,7 +16,8 @@ const EmployeeSchema: Schema = new Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     image: { type: String, default: '' },
-    role: { type: String, default: 'employee' }
+    role: { type: String, default: 'employee' },
+    googleId: { type: String }
 }, {
     timestamps: true
 });

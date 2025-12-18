@@ -1,12 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
-import { PORT, CLIENT_URL } from '@/config';
-import { connectDB } from '@/utils/db';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import bodyParser from 'body-parser';
 import swaggerUi from 'swagger-ui-express';
+
+import { PORT, CLIENT_URL } from '@/config';
+import { connectDB } from '@/utils/db';
 import { specs } from '@/config/swagger';
+import { initializeSocket } from './socket';
 
 import authRouter from '@/routes/portals/auth.routes';
 import employeeAuthRouter from '@/routes/portals/employee.auth.routes';
@@ -16,10 +20,6 @@ import taskRouter from '@/routes/portals/task.routes';
 import projectRouter from '@/routes/portals/project.routes';
 import calendarRouter from '@/routes/portals/calendar.routes';
 import chatRouter from '@/routes/portals/chat.routes';
-
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import { initializeSocket } from './socket';
 
 const app = express();
 const httpServer = createServer(app);

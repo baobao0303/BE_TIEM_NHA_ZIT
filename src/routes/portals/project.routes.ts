@@ -1,7 +1,12 @@
-import { Router } from 'express';
-import projectController from '@/controllers/portals/projects/projectController';
-import { protect } from '@/middlewares/portals/auth.middleware';
-import { validateId } from '@/middlewares/portals/validate.middleware';
+import { Router } from "express";
+import projectController from "@/controllers/portals/projects/projectController";
+import { protect } from "@/middlewares/portals/auth.middleware";
+import { validateId } from "@/middlewares/portals/validate.middleware";
+import {
+  validate,
+  projectCreateSchema,
+  projectUpdateSchema,
+} from "@/utils/validate/portal/project.validate";
 
 const router = Router();
 
@@ -27,7 +32,7 @@ router.use(protect);
  *       200:
  *         description: Project statistics
  */
-router.get('/stats', projectController.getStats);
+router.get("/stats", projectController.getStats);
 
 /**
  * @swagger
@@ -84,9 +89,10 @@ router.get('/stats', projectController.getStats);
  *       201:
  *         description: Project created
  */
-router.route('/')
-    .get(projectController.getAll)
-    .post(projectController.create);
+router
+  .route("/")
+  .get(projectController.getAll)
+  .post(validate(projectCreateSchema), projectController.create);
 
 /**
  * @swagger
@@ -139,9 +145,10 @@ router.route('/')
  *       200:
  *         description: Project deleted
  */
-router.route('/:id')
-    .get(validateId, projectController.getOne)
-    .put(validateId, projectController.update)
-    .delete(validateId, projectController.delete);
+router
+  .route("/:id")
+  .get(validateId, projectController.getOne)
+  .put(validateId, validate(projectUpdateSchema), projectController.update)
+  .delete(validateId, projectController.delete);
 
 export default router;
