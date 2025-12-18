@@ -1,13 +1,15 @@
-import { Router } from 'express';
-import chatController from '@/controllers/portals/chat/chatController';
-import { protect } from '@/middlewares/portals/auth.middleware';
-import { 
-    validateAccessChat, 
-    validateCreateGroupChat, 
-    validateSendMessage, 
-    validateReactToMessage,
-    validateUpdateChat 
-} from '@/middlewares/portals/chat.middleware';
+import { Router } from "express";
+import chatController from "@/controllers/portals/chat/chatController";
+import { protect } from "@/middlewares/portals/auth.middleware";
+import {
+  validate,
+  accessChatSchema,
+  createGroupChatSchema,
+  sendMessageSchema,
+  reactToMessageSchema,
+  updateChatSchema,
+  validateSendMessage,
+} from "@/utils/validate/portal/chat.validate";
 
 const router = Router();
 
@@ -36,7 +38,7 @@ router.use(protect);
  *       200:
  *         description: List of contacts
  */
-router.get('/contacts', chatController.getContacts);
+router.get("/contacts", chatController.getContacts);
 
 /**
  * @swagger
@@ -62,7 +64,7 @@ router.get('/contacts', chatController.getContacts);
  *       200:
  *         description: Chat object
  */
-router.post('/access', validateAccessChat, chatController.accessChat);
+router.post("/access", validate(accessChatSchema), chatController.accessChat);
 
 /**
  * @swagger
@@ -74,7 +76,7 @@ router.post('/access', validateAccessChat, chatController.accessChat);
  *       200:
  *         description: List of conversations
  */
-router.get('/', chatController.fetchChats);
+router.get("/", chatController.fetchChats);
 
 /**
  * @swagger
@@ -105,7 +107,7 @@ router.get('/', chatController.fetchChats);
  *       201:
  *         description: Group Chat created
  */
-router.post('/group', validateCreateGroupChat, chatController.createGroupChat);
+router.post("/group", validate(createGroupChatSchema), chatController.createGroupChat);
 
 /**
  * @swagger
@@ -131,7 +133,7 @@ router.post('/group', validateCreateGroupChat, chatController.createGroupChat);
  *       201:
  *         description: Message sent
  */
-router.post('/message', validateSendMessage, chatController.sendMessage);
+router.post("/message", validate(sendMessageSchema), validateSendMessage, chatController.sendMessage);
 
 /**
  * @swagger
@@ -160,7 +162,7 @@ router.post('/message', validateSendMessage, chatController.sendMessage);
  *       404:
  *         description: Message not found
  */
-router.put('/message/react', validateReactToMessage, chatController.reactToMessage);
+router.put("/message/react", validate(reactToMessageSchema), chatController.reactToMessage);
 
 /**
  * @swagger
@@ -178,7 +180,7 @@ router.put('/message/react', validateReactToMessage, chatController.reactToMessa
  *       200:
  *         description: List of messages
  */
-router.get('/message/:chatId', chatController.allMessages);
+router.get("/message/:chatId", chatController.allMessages);
 
 /**
  * @swagger
@@ -208,6 +210,6 @@ router.get('/message/:chatId', chatController.allMessages);
  *       404:
  *         description: Chat not found
  */
-router.put('/:chatId', validateUpdateChat, chatController.updateChat);
+router.put("/:chatId", validate(updateChatSchema), chatController.updateChat);
 
 export default router;

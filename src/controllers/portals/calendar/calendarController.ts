@@ -7,7 +7,19 @@ import { asyncHandler } from '@/utils/asyncHandler';
 class CalendarController {
     // Get all events
     public getAll: RequestHandler = asyncHandler(async (req, res) => {
-        const events = await CalendarEvent.find().sort({ start: 1 });
+        const { start, end } = req.query;
+        let query: any = {};
+
+        if (start && end) {
+            // Filter events that overlap with the requested range
+            // (EventStart < RangeEnd) AND (EventEnd > RangeStart)
+            query = {
+                start: { $lt: new Date(end as string) },
+                end: { $gt: new Date(start as string) }
+            };
+        }
+
+        const events = await CalendarEvent.find(query).sort({ start: 1 });
         return sendSuccessResponse({ res, message: 'Events fetched successfully', data: events });
     });
 

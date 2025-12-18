@@ -1,7 +1,9 @@
-import { Router } from 'express';
-import calendarController from '@/controllers/portals/calendar/calendarController';
-import { protect } from '@/middlewares/portals/auth.middleware';
-import { validateId } from '@/middlewares/portals/validate.middleware';
+import { Router } from "express";
+import calendarController from "@/controllers/portals/calendar/calendarController";
+import HolidayController from "@/controllers/portals/calendar/HolidayController";
+import { protect } from "@/middlewares/portals/auth.middleware";
+import { validateId } from "@/middlewares/portals/validate.middleware";
+import { validate, calendarCreateSchema, calendarUpdateSchema } from "@/utils/validate/portal/calendar.validate";
 
 const router = Router();
 
@@ -14,6 +16,31 @@ router.use(protect);
  *   name: Calendar
  *   description: Calendar event management
  */
+
+/**
+ * @swagger
+ * /api/v1/calendar/holidays:
+ *   get:
+ *     summary: Get public holidays
+ *     tags: [Calendar]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: year
+ *         schema:
+ *           type: integer
+ *         description: Year to fetch holidays for (default current year)
+ *       - in: query
+ *         name: countryCode
+ *         schema:
+ *           type: string
+ *         description: Country code (default VN)
+ *     responses:
+ *       200:
+ *         description: List of holidays
+ */
+router.get("/holidays", HolidayController.getHolidays);
 
 /**
  * @swagger
@@ -59,9 +86,7 @@ router.use(protect);
  *       201:
  *         description: Event created
  */
-router.route('/')
-    .get(calendarController.getAll)
-    .post(calendarController.create);
+router.route("/").get(calendarController.getAll).post(validate(calendarCreateSchema), calendarController.create);
 
 /**
  * @swagger
@@ -113,8 +138,9 @@ router.route('/')
  *       200:
  *         description: Event deleted
  */
-router.route('/:id')
-    .put(validateId, calendarController.update)
-    .delete(validateId, calendarController.delete);
+router
+  .route("/:id")
+  .put(validateId, validate(calendarUpdateSchema), calendarController.update)
+  .delete(validateId, calendarController.delete);
 
 export default router;

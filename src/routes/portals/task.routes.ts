@@ -1,8 +1,13 @@
-import { Router } from 'express';
-import taskController from '@/controllers/portals/tasks/taskController';
-import { protect } from '@/middlewares/portals/auth.middleware';
-import { validateId } from '@/middlewares/portals/validate.middleware';
-import { validateCreateTask } from '@/middlewares/portals/task.middleware';
+import { Router } from "express";
+import taskController from "@/controllers/portals/tasks/taskController";
+import { protect } from "@/middlewares/portals/auth.middleware";
+import { validateId } from "@/middlewares/portals/validate.middleware";
+import {
+  validate,
+  taskCreateSchema,
+  taskUpdateSchema,
+  validateCreateTask,
+} from "@/utils/validate/portal/task.validate";
 
 const router = Router();
 
@@ -43,7 +48,7 @@ router.use(protect);
  *                     completed:
  *                       type: array
  */
-router.get('/kanban', taskController.getKanban);
+router.get("/kanban", taskController.getKanban);
 
 /**
  * @swagger
@@ -57,7 +62,7 @@ router.get('/kanban', taskController.getKanban);
  *       200:
  *         description: Task statistics
  */
-router.get('/stats', taskController.getStats);
+router.get("/stats", taskController.getStats);
 
 /**
  * @swagger
@@ -71,7 +76,7 @@ router.get('/stats', taskController.getStats);
  *       200:
  *         description: Recent tasks
  */
-router.get('/recent', taskController.getRecent);
+router.get("/recent", taskController.getRecent);
 
 /**
  * @swagger
@@ -148,9 +153,10 @@ router.get('/recent', taskController.getRecent);
  *       201:
  *         description: Task created
  */
-router.route('/')
-    .get(taskController.getAll)
-    .post(validateCreateTask, taskController.create);
+router
+  .route("/")
+  .get(taskController.getAll)
+  .post(validate(taskCreateSchema), validateCreateTask, taskController.create);
 
 /**
  * @swagger
@@ -220,8 +226,9 @@ router.route('/')
  *       200:
  *         description: Task deleted
  */
-router.route('/:id')
-    .put(validateId, taskController.update)
-    .delete(validateId, taskController.delete);
+router
+  .route("/:id")
+  .put(validateId, validate(taskUpdateSchema), taskController.update)
+  .delete(validateId, taskController.delete);
 
 export default router;

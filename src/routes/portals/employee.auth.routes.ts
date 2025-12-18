@@ -1,5 +1,13 @@
-import { Router } from 'express';
-import employeeAuthController from '@/controllers/portals/employee/employeeAuthController';
+import { Router } from "express";
+import employeeAuthController from "@/controllers/portals/employee/employeeAuthController";
+import { protect } from "@/middlewares/portals/auth.middleware";
+import {
+  validate,
+  employeeLoginSchema,
+  employeeRegisterSchema,
+  employeeCreateSchema,
+  employeeRefreshTokenSchema,
+} from "@/utils/validate/portal/auth.validate";
 
 const router = Router();
 
@@ -43,7 +51,7 @@ const router = Router();
  *       500:
  *         description: Internal server error
  */
-router.post('/employee/register', employeeAuthController.register);
+router.post("/employee/register", validate(employeeRegisterSchema), employeeAuthController.register);
 
 /**
  * @swagger
@@ -73,7 +81,63 @@ router.post('/employee/register', employeeAuthController.register);
  *       500:
  *         description: Internal server error
  */
-router.post('/employee/sign-in', employeeAuthController.login);
+router.post("/employee/sign-in", validate(employeeLoginSchema), employeeAuthController.login);
+
+/**
+ * @swagger
+ * /api/v1/auth/employee/google-url:
+ *   get:
+ *     summary: Get Google Login URL
+ *     tags: [Employee Auth]
+ *     responses:
+ *       200:
+ *         description: Success
+ */
+router.get("/employee/google-url", employeeAuthController.getGoogleUrl);
+
+/**
+ * @swagger
+ * /api/v1/auth/employee/google/callback:
+ *   get:
+ *     summary: Google OAuth Callback
+ *     tags: [Employee Auth]
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         schema:
+ *           type: string
+ *         required: true
+ *     responses:
+ *       302:
+ *         description: Redirects to Frontend with temporary code
+ */
+router.get("/employee/google/callback", employeeAuthController.googleCallback);
+
+/**
+ * @swagger
+ * /api/v1/auth/employee/exchange-code:
+ *   post:
+ *     summary: Exchange Temporary Code for Tokens
+ *     tags: [Employee Auth]
+ *     responses:
+ *       200:
+ *         description: Login successful
+ */
+router.post("/employee/exchange-code", employeeAuthController.exchangeCode);
+
+/**
+ * @swagger
+ * /api/v1/auth/employee/me:
+ *   get:
+ *     summary: Get current user and refresh access token
+ *     tags: [Employee Auth]
+ *     responses:
+ *       200:
+ *         description: User info with new access token
+ *       401:
+ *         description: Not authenticated
+ */
+router.get("/employee/me", employeeAuthController.getMe);
 
 /**
  * @swagger
@@ -87,7 +151,7 @@ router.post('/employee/sign-in', employeeAuthController.login);
  *       500:
  *         description: Internal server error
  */
-router.post('/employee/logout', employeeAuthController.logout);
+router.post("/employee/logout", employeeAuthController.logout);
 
 /**
  * @swagger
@@ -112,7 +176,7 @@ router.post('/employee/logout', employeeAuthController.logout);
  *       403:
  *         description: Invalid or expired refresh token
  */
-router.post('/employee/refresh-token', employeeAuthController.refreshToken);
+router.post("/employee/refresh-token", validate(employeeRefreshTokenSchema), employeeAuthController.refreshToken);
 
 /**
  * @swagger
@@ -153,7 +217,6 @@ router.post('/employee/refresh-token', employeeAuthController.refreshToken);
  *       401:
  *         description: Unauthorized
  */
-import { protect } from '@/middlewares/portals/auth.middleware';
-router.post('/employee/create', protect, employeeAuthController.createEmployee);
+router.post("/employee/create", protect, validate(employeeCreateSchema), employeeAuthController.createEmployee);
 
 export default router;

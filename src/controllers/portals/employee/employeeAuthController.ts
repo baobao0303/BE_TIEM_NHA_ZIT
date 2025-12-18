@@ -1,101 +1,309 @@
-import { RequestHandler } from 'express';
-import Employee from '@/models/portals/auths/Employee';
-import { sendSuccessResponse } from '@/utils/http/res.response';
-import { sendErrorResponse } from '@/utils/http/errors.response';
-import { hashPassword, comparePassword, generateToken, generateRefreshToken, verifyRefreshToken } from '@/utils/auth';
-import { JwtPayload } from 'jsonwebtoken';
-import { asyncHandler } from '@/utils/asyncHandler';
+import { RequestHandler } from "express";
+import Employee from "@/models/portals/auths/Employee";
+import { sendSuccessResponse } from "@/utils/http/res.response";
+import { sendErrorResponse } from "@/utils/http/errors.response";
+import { hashPassword, comparePassword, generateToken, generateRefreshToken, verifyRefreshToken } from "@/utils/auth";
+import { JwtPayload } from "jsonwebtoken";
+import { asyncHandler } from "@/utils/asyncHandler";
+import { OAuth2Client } from "google-auth-library";
+import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } from "@/config";
+
+const client = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
 
 class EmployeeAuthController {
+  public register: RequestHandler = asyncHandler(async (req, res) => {
+    const { name, email, password, role } = req.body;
 
-    public register: RequestHandler = asyncHandler(async (req, res) => {
-        const { name, email, password, role } = req.body;
+    const existingEmployee = await Employee.findOne({ email });
+    if (existingEmployee) {
+      return sendErrorResponse({ res, message: "Nhân viên đã tồn tại", status: 400 });
+    }
 
-        const existingEmployee = await Employee.findOne({ email });
-        if (existingEmployee) {
-                return sendErrorResponse({ res, message: 'Employee already exists', status: 400 });
-        }
+    const hashedPassword = await hashPassword(password);
 
-        const hashedPassword = await hashPassword(password);
+    const newEmployee = new Employee({
+      name,
+      email,
+      password: hashedPassword,
+      role: role || "employee",
+    });
 
-        const newEmployee = new Employee({
-            name,
-            email,
-            password: hashedPassword,
-            role: role || 'employee'
+    await newEmployee.save();
+
+    return sendSuccessResponse({ res, message: "Đăng ký nhân viên thành công", status: 201 });
+  });
+
+  public login: RequestHandler = asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+
+    const employee = await Employee.findOne({ email });
+    if (!employee) {
+      return sendErrorResponse({ res, message: "Email hoặc mật khẩu không chính xác", status: 400 });
+    }
+
+    const isMatch = await comparePassword(password, employee.password);
+    if (!isMatch) {
+      return sendErrorResponse({ res, message: "Email hoặc mật khẩu không chính xác", status: 400 });
+    }
+
+    const accessToken = generateToken({ id: employee._id, role: employee.role });
+    const refreshToken = generateRefreshToken({ id: employee._id, role: employee.role });
+
+    // Lưu refreshToken vào HttpOnly cookie
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: "/",
+    });
+
+    return sendSuccessResponse({
+      res,
+      message: "Đăng nhập thành công",
+      data: {
+        accessToken,
+        // Không trả refreshToken trong body nữa
+        employee: { id: employee._id, name: employee.name, email: employee.email, role: employee.role },
+      },
+    });
+  });
+
+  // In-memory store for temporary codes (Production should use Redis)
+  private tempAuthCodes = new Map<string, { userId: string; expires: number }>();
+
+  public getGoogleUrl: RequestHandler = (req, res) => {
+    const redirectUrl = client.generateAuthUrl({
+      access_type: "offline",
+      scope: ["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"],
+      redirect_uri:
+        process.env.GOOGLE_REDIRECT_URI ||
+        "https://be-cua-tiem-nha-dit.onrender.com/api/v1/auth/employee/google/callback",
+    });
+    return sendSuccessResponse({ res, message: "Đã tạo URL xác thực Google", data: { url: redirectUrl } });
+  };
+
+  public googleCallback: RequestHandler = asyncHandler(async (req, res) => {
+    const { code } = req.query;
+
+    if (!code || typeof code !== "string") {
+      return sendErrorResponse({ res, message: "Thiếu mã xác thực", status: 400 });
+    }
+
+    try {
+      // Exchange Google code for tokens
+      const { tokens } = await client.getToken({
+        code,
+        redirect_uri:
+          process.env.GOOGLE_REDIRECT_URI ||
+          "https://be-cua-tiem-nha-dit.onrender.com/api/v1/auth/employee/google/callback",
+      });
+
+      client.setCredentials(tokens);
+
+      // Verify ID Token to get user info
+      const ticket = await client.verifyIdToken({
+        idToken: tokens.id_token!,
+        audience: GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+
+      if (!payload || !payload.email) {
+        return sendErrorResponse({ res, message: "Token Google không hợp lệ", status: 400 });
+      }
+
+      const { email, name, picture, sub: googleId } = payload;
+
+      let employee = await Employee.findOne({ email });
+
+      if (employee) {
+        if (!employee.googleId) employee.googleId = googleId;
+        if (!employee.image && picture) employee.image = picture;
+        await employee.save();
+      } else {
+        // Auto-register new employee
+        const randomPassword = require("crypto").randomBytes(16).toString("hex");
+        const hashedPassword = await hashPassword(randomPassword);
+
+        employee = new Employee({
+          name,
+          email,
+          password: hashedPassword,
+          role: "employee",
+          googleId,
+          image: picture,
         });
+        await employee.save();
+      }
 
-        await newEmployee.save();
+      // Generate Temporary Auth Code (internal)
+      const tempCode = require("crypto").randomBytes(16).toString("hex");
+      this.tempAuthCodes.set(tempCode, {
+        userId: employee._id.toString(),
+        expires: Date.now() + 60000, // 60 seconds expiration
+      });
 
-        return sendSuccessResponse({ res, message: 'Employee registered successfully', status: 201 });
+      // Store temp code in HttpOnly cookie instead of putting it on URL params
+      const isProd = process.env.NODE_ENV === "production";
+      res.cookie("temp_auth_code", tempCode, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: "lax",
+        maxAge: 60000,
+        path: "/",
+      });
+
+      // Redirect to frontend WITHOUT any code in query params
+      const clientUrl = process.env.CLIENT_URL || "http://localhost:4200";
+      return res.redirect(`${clientUrl}/auth/callback`);
+    } catch (error) {
+      console.error("Google Callback Error:", error);
+      return sendErrorResponse({ res, message: "Xác thực Google thất bại", status: 401 });
+    }
+  });
+
+  public exchangeCode: RequestHandler = asyncHandler(async (req, res) => {
+    // Chỉ lấy code từ cookie, không nhận từ body nữa
+    const code = (req as any).cookies?.temp_auth_code as string | undefined;
+
+    if (!code || !this.tempAuthCodes.has(code)) {
+      return sendErrorResponse({ res, message: "Mã không hợp lệ hoặc đã hết hạn", status: 400 });
+    }
+
+    const data = this.tempAuthCodes.get(code)!;
+
+    if (Date.now() > data.expires) {
+      this.tempAuthCodes.delete(code);
+      res.clearCookie("temp_auth_code");
+      return sendErrorResponse({ res, message: "Mã đã hết hạn", status: 400 });
+    }
+
+    const employee = await Employee.findById(data.userId);
+    this.tempAuthCodes.delete(code); // Consume code
+    res.clearCookie("temp_auth_code");
+
+    if (!employee) {
+      return sendErrorResponse({ res, message: "Không tìm thấy người dùng", status: 404 });
+    }
+
+    const accessToken = generateToken({ id: employee._id, role: employee.role });
+    const refreshToken = generateRefreshToken({ id: employee._id, role: employee.role });
+
+    // Lưu refreshToken vào HttpOnly cookie
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: "/",
     });
 
-    public login: RequestHandler = asyncHandler(async (req, res) => {
-        const { email, password } = req.body;
+    return sendSuccessResponse({
+      res,
+      message: "Đăng nhập thành công",
+      data: {
+        accessToken,
+        // Không trả refreshToken trong body nữa
+        employee: {
+          id: employee._id,
+          name: employee.name,
+          email: employee.email,
+          role: employee.role,
+          image: employee.image,
+        },
+      },
+    });
+  });
 
-        const employee = await Employee.findOne({ email });
-        if (!employee) {
-            return sendErrorResponse({ res, message: 'Invalid credentials', status: 400 });
-        }
+  public getMe: RequestHandler = asyncHandler(async (req, res) => {
+    // Lấy refreshToken từ cookie
+    const refreshToken = (req as any).cookies?.refreshToken;
 
-        const isMatch = await comparePassword(password, employee.password);
-        if (!isMatch) {
-            return sendErrorResponse({ res, message: 'Invalid credentials', status: 400 });
-        }
+    if (!refreshToken) {
+      return sendErrorResponse({ res, message: "Chưa đăng nhập", status: 401 });
+    }
 
-        const accessToken = generateToken({ id: employee._id, role: employee.role });
-        const refreshToken = generateRefreshToken({ id: employee._id, role: employee.role });
+    try {
+      const decoded = verifyRefreshToken(refreshToken) as JwtPayload;
 
-        return sendSuccessResponse({ res, message: 'Login successful', data: { accessToken, refreshToken, employee: { id: employee._id, name: employee.name, email: employee.email, role: employee.role } } });
+      // Tìm user
+      const employee = await Employee.findById(decoded.id);
+      if (!employee) {
+        return sendErrorResponse({ res, message: "Không tìm thấy người dùng", status: 404 });
+      }
+
+      // Tạo accessToken mới
+      const accessToken = generateToken({ id: employee._id, role: employee.role });
+
+      return sendSuccessResponse({
+        res,
+        message: "Xác thực thành công",
+        data: {
+          accessToken,
+          employee: {
+            id: employee._id,
+            name: employee.name,
+            email: employee.email,
+            role: employee.role,
+            image: employee.image,
+          },
+        },
+      });
+    } catch (err) {
+      res.clearCookie("refreshToken");
+      return sendErrorResponse({ res, message: "Token không hợp lệ", status: 403 });
+    }
+  });
+
+  public refreshToken: RequestHandler = asyncHandler(async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return sendErrorResponse({ res, message: "Cần có Refresh Token", status: 400 });
+    }
+
+    try {
+      const decoded = verifyRefreshToken(refreshToken) as JwtPayload;
+      const accessToken = generateToken({ id: decoded.id, role: decoded.role });
+
+      return sendSuccessResponse({ res, message: "Làm mới token thành công", data: { accessToken } });
+    } catch (err) {
+      return sendErrorResponse({ res, message: "Refresh token không hợp lệ hoặc đã hết hạn", status: 403 });
+    }
+  });
+
+  public createEmployee: RequestHandler = asyncHandler(async (req, res) => {
+    const { name, email, password, role, department, jobTitle } = req.body;
+
+    const existingEmployee = await Employee.findOne({ email });
+    if (existingEmployee) {
+      return sendErrorResponse({ res, message: "Nhân viên với email này đã tồn tại", status: 400 });
+    }
+
+    const hashedPassword = await hashPassword(password);
+
+    const newEmployee = new Employee({
+      name,
+      email,
+      password: hashedPassword,
+      role: role || "employee",
+      department,
+      jobTitle,
     });
 
-    public refreshToken: RequestHandler = asyncHandler(async (req, res) => {
-        const { refreshToken } = req.body;
+    await newEmployee.save();
 
-        if (!refreshToken) {
-            return sendErrorResponse({ res, message: 'Refresh Token is required', status: 400 });
-        }
+    return sendSuccessResponse({ res, message: "Tạo nhân viên thành công", data: newEmployee, status: 201 });
+  });
 
-        try {
-            const decoded = verifyRefreshToken(refreshToken) as JwtPayload;
-            const accessToken = generateToken({ id: decoded.id, role: decoded.role });
-            
-            return sendSuccessResponse({ res, message: 'Token refreshed successfully', data: { accessToken } });
-
-        } catch (err) {
-            return sendErrorResponse({ res, message: 'Invalid or expired refresh token', status: 403 });
-        }
-    });
-
-    public createEmployee: RequestHandler = asyncHandler(async (req, res) => {
-        const { name, email, password, role, department, jobTitle } = req.body;
-
-        const existingEmployee = await Employee.findOne({ email });
-        if (existingEmployee) {
-            return sendErrorResponse({ res, message: 'Employee with this email already exists', status: 400 });
-        }
-
-        const hashedPassword = await hashPassword(password);
-
-        const newEmployee = new Employee({
-            name,
-            email,
-            password: hashedPassword,
-            role: role || 'employee',
-            department,
-            jobTitle
-        });
-
-        await newEmployee.save();
-
-        return sendSuccessResponse({ res, message: 'Employee created successfully', data: newEmployee, status: 201 });
-    });
-
-    public logout: RequestHandler = asyncHandler(async (req, res) => {
-        // For cookie based handling
-        res.clearCookie('token'); 
-        return sendSuccessResponse({ res, message: 'Logout successful' });
-    });
+  public logout: RequestHandler = asyncHandler(async (req, res) => {
+    // Clear cookies
+    res.clearCookie("refreshToken");
+    res.clearCookie("temp_auth_code");
+    return sendSuccessResponse({ res, message: "Đăng xuất thành công" });
+  });
 }
 
 export default new EmployeeAuthController();
