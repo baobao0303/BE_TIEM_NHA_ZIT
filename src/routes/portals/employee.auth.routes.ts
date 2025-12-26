@@ -97,24 +97,6 @@ router.get("/employee/google-url", employeeAuthController.getGoogleUrl);
 
 /**
  * @swagger
- * /api/v1/auth/employee/google/callback:
- *   get:
- *     summary: Google OAuth Callback
- *     tags: [Employee Auth]
- *     parameters:
- *       - in: query
- *         name: code
- *         schema:
- *           type: string
- *         required: true
- *     responses:
- *       302:
- *         description: Redirects to Frontend with temporary code
- */
-router.get("/employee/google/callback", employeeAuthController.googleCallback);
-
-/**
- * @swagger
  * /api/v1/auth/employee/exchange-code:
  *   post:
  *     summary: Exchange Temporary Code for Tokens
