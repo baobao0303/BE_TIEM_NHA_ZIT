@@ -77,91 +77,10 @@ class EmployeeAuthController {
     const redirectUrl = client.generateAuthUrl({
       access_type: "offline",
       scope: ["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"],
-      redirect_uri:
-        process.env.GOOGLE_REDIRECT_URI ||
-        "https://be-cua-tiem-nha-dit.onrender.com/api/v1/auth/employee/google/callback",
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI || "",
     });
     return sendSuccessResponse({ res, message: "Đã tạo URL xác thực Google", data: { url: redirectUrl } });
   };
-
-  public googleCallback: RequestHandler = asyncHandler(async (req, res) => {
-    const { code } = req.query;
-
-    if (!code || typeof code !== "string") {
-      return sendErrorResponse({ res, message: "Thiếu mã xác thực", status: 400 });
-    }
-
-    try {
-      // Exchange Google code for tokens
-      const { tokens } = await client.getToken({
-        code,
-        redirect_uri:
-          process.env.GOOGLE_REDIRECT_URI ||
-          "https://be-cua-tiem-nha-dit.onrender.com/api/v1/auth/employee/google/callback",
-      });
-
-      client.setCredentials(tokens);
-
-      // Verify ID Token to get user info
-      const ticket = await client.verifyIdToken({
-        idToken: tokens.id_token!,
-        audience: GOOGLE_CLIENT_ID,
-      });
-      const payload = ticket.getPayload();
-
-      if (!payload || !payload.email) {
-        return sendErrorResponse({ res, message: "Token Google không hợp lệ", status: 400 });
-      }
-
-      const { email, name, picture, sub: googleId } = payload;
-
-      let employee = await Employee.findOne({ email });
-
-      if (employee) {
-        if (!employee.googleId) employee.googleId = googleId;
-        if (!employee.image && picture) employee.image = picture;
-        await employee.save();
-      } else {
-        // Auto-register new employee
-        const randomPassword = require("crypto").randomBytes(16).toString("hex");
-        const hashedPassword = await hashPassword(randomPassword);
-
-        employee = new Employee({
-          name,
-          email,
-          password: hashedPassword,
-          role: "employee",
-          googleId,
-          image: picture,
-        });
-        await employee.save();
-      }
-
-      // Generate Temporary Auth Code (internal)
-      const tempCode = require("crypto").randomBytes(16).toString("hex");
-      this.tempAuthCodes.set(tempCode, {
-        userId: employee._id.toString(),
-        expires: Date.now() + 60000, // 60 seconds expiration
-      });
-
-      // Store temp code in HttpOnly cookie instead of putting it on URL params
-      const isProd = process.env.NODE_ENV === "production";
-      res.cookie("temp_auth_code", tempCode, {
-        httpOnly: true,
-        secure: isProd,
-        sameSite: "lax",
-        maxAge: 60000,
-        path: "/",
-      });
-
-      // Redirect to frontend WITHOUT any code in query params
-      const clientUrl = process.env.CLIENT_URL || "http://localhost:4200";
-      return res.redirect(`${clientUrl}/auth/callback`);
-    } catch (error) {
-      console.error("Google Callback Error:", error);
-      return sendErrorResponse({ res, message: "Xác thực Google thất bại", status: 401 });
-    }
-  });
 
   public exchangeCode: RequestHandler = asyncHandler(async (req, res) => {
     // Chỉ lấy code từ cookie, không nhận từ body nữa
